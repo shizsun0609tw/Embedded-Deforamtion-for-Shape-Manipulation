@@ -19,16 +19,19 @@ public:
 	DeformationGraph();
 
 public:
-	void Init(_GLMmodel* mesh);
-	void UniformSampling();
-	vector<pair<vector3, vector3>> GetEdges();
+	void Init(_GLMmodel* originMesh, _GLMmodel* samplingMesh);
+
+public:
+	vector<int> GetSamplingVertices();
 
 private:
 	void CalConnectedMap();
+	void CalSamplingVertices();
 
 private:
 	_GLMmodel* mesh;
-	vector<vector3> sample_vertices;
-	map<int, set<int>> connectedMap;
+	_GLMmodel* samplingMesh;
+	vector<int> sample_vertices;
 	vector<int> sample_edges;
+	map<int, set<int>> connectedMap;
 };

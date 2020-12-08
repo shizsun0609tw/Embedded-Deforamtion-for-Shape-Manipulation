@@ -5,37 +5,36 @@ DeformationGraph::DeformationGraph()
 
 }
 
-void DeformationGraph::Init(_GLMmodel* mesh)
+void DeformationGraph::Init(_GLMmodel* mesh, _GLMmodel* samplingMesh)
 {
 	this->mesh = mesh;
+    this->samplingMesh = samplingMesh;
 
     CalConnectedMap();
+    CalSamplingVertices();
 }
 
-void DeformationGraph::UniformSampling()
+void DeformationGraph::CalSamplingVertices()
 {
-    const int K_MAX = 4;
-    const int DEFAULT = 0;
-    const int DROP = -1;
-    const int CONNECTED = 1;
-    vector<int> flags(connectedMap.size() + 1, DEFAULT);
-
-    for (auto iter = connectedMap.begin(); iter != connectedMap.end(); ++iter)
+    for (int i = 1; i <= samplingMesh->numvertices; ++i)
     {
-        if (flags[iter->first] == DROP) continue;
-
-        for (int k = 0; k < K_MAX; ++k)
+        float min = INT_MAX;
+        int idx = 0;
+        for (int j = 1; j <= mesh->numvertices; ++j)
         {
-
+            float temp = fabs(samplingMesh->vertices[i * 3 + 0] - mesh->vertices[j * 3 + 0])
+                        + fabs(samplingMesh->vertices[i * 3 + 1] - mesh->vertices[j * 3 + 1])
+                        + fabs(samplingMesh->vertices[i * 3 + 2] - mesh->vertices[j * 3 + 2]);
+            if (temp < min)
+            {
+                min = temp;
+                idx = j;
+            }
         }
+        sample_vertices.push_back(idx);
     }
-}
 
-vector<pair<vector3, vector3>> DeformationGraph::GetEdges()
-{
-	vector<pair<vector3, vector3>> res;
-
-	return res;
+    cout << "Fit Sample Vertices:" << sample_vertices.size() << endl;
 }
 
 void DeformationGraph::CalConnectedMap()
@@ -50,4 +49,9 @@ void DeformationGraph::CalConnectedMap()
             connectedMap[mesh->triangles[i].vindices[j]].insert(mesh->triangles[i].vindices[(j + 2) % 3]);
         }
     }
+}
+
+vector<int> DeformationGraph::GetSamplingVertices()
+{
+    return sample_vertices;
 }

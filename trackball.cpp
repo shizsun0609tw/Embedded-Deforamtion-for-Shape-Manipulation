@@ -66,7 +66,7 @@ static GLboolean tb_tracking = GL_FALSE;
 static GLboolean tb_animate = GL_TRUE;
 
 _GLMmodel* originMesh;
-_GLMmodel* recMesh;
+_GLMmodel* samplingMesh;
 
 vector<int> featureList;
 int selectedFeature = -1;
@@ -248,20 +248,21 @@ void init(void)
     tbInit(GLUT_LEFT_BUTTON);
     tbAnimate(GL_TRUE);
 
-    originMesh = glmReadOBJ("../data/dino.obj");
-    recMesh = glmReadOBJ("../data/dino.obj");
+    originMesh = glmReadOBJ("../data/man.obj");
+    samplingMesh = glmReadOBJ("../data/man_sampling.obj");
         
-    glmUnitize(recMesh);
+    glmUnitize(samplingMesh);
     glmUnitize(originMesh);
-    glmFacetNormals(recMesh);
+    glmFacetNormals(samplingMesh);
     glmFacetNormals(originMesh);
-    glmVertexNormals(recMesh, 90.0f);
+    glmVertexNormals(samplingMesh, 90.0f);
     glmVertexNormals(originMesh, 90.0f);
 
-    cout << "Vertices Num: " << originMesh->numvertices << endl;
+    cout << "Origin Mesh Vertices Num: " << originMesh->numvertices << endl;
+    cout << "Sampling Mesh Vertices Num: " << samplingMesh->numvertices << endl;
+    cout << "--------------------------------------------------" << endl;
 
-    deformationGraph.Init(recMesh);
-    deformationGraph.UniformSampling();
+    deformationGraph.Init(originMesh, samplingMesh);
 }
 
 void reshape(int width, int height)
@@ -312,6 +313,17 @@ void RenderMesh(GLMmodel* model, vector3 translate, vector3 color)
     }
     glEnd();
 
+    vector<int> samplingVertices = deformationGraph.GetSamplingVertices();
+
+    glPointSize(5.0f);
+    glBegin(GL_POINTS);
+    glColor3f(0.0f, 0.0f, 1.0f);
+    for (int i = 0; i < samplingVertices.size(); ++i)
+    {
+        glVertex3fv((float*)&model->vertices[3 * samplingVertices[i]]);
+    }
+    glEnd();
+
     glPopMatrix();
 }
 
@@ -327,7 +339,7 @@ void RenderDeformationGraph(vector3 translate, vector3 color)
     
     glLineWidth(10.0f);
     glColor3f(color.x, color.y, color.z);
-    
+    /*
     vector<pair<vector3, vector3>> edges = deformationGraph.GetEdges();
 
     for (int i = 0; i < edges.size(); ++i)
@@ -337,7 +349,7 @@ void RenderDeformationGraph(vector3 translate, vector3 color)
         glVertex3fv((float*)&edges[i].second);
         glEnd();
     }
-    
+    */
     glPopMatrix();
 }
 
@@ -345,8 +357,9 @@ void display(void)
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    RenderMesh(originMesh, vector3(0.15, 0.0, 0.0), vector3(0.6, 0.0, 0.0));
-    RenderDeformationGraph(vector3(0.15, 0.0, 0.0), vector3(0.6, 0.6, 0.0));
+    RenderMesh(originMesh, vector3(0.0, 0.0, 0.0), vector3(0.6, 0.0, 0.0));
+    // RenderMesh(samplingMesh, vector3(0.0, 0.0, 0.0), vector3(0.0, 0.6, 0.0));
+    // RenderDeformationGraph(vector3(0.15, 0.0, 0.0), vector3(0.6, 0.6, 0.0));
     
     glFlush();
     glutSwapBuffers();
