@@ -31,10 +31,13 @@ void DeformationGraph::CalSamplingVertices()
                 idx = j;
             }
         }
-        sample_vertices.push_back(idx);
+        sample_idices.push_back(idx);
+        samplingMesh->vertices[i * 3 + 0] = mesh->vertices[idx * 3 + 0];
+        samplingMesh->vertices[i * 3 + 1] = mesh->vertices[idx * 3 + 1];
+        samplingMesh->vertices[i * 3 + 2] = mesh->vertices[idx * 3 + 2];
     }
 
-    cout << "Fit Sample Vertices:" << sample_vertices.size() << endl;
+    cout << "Fit Sample Vertices:" << sample_idices.size() << endl;
 }
 
 void DeformationGraph::CalConnectedMap()
@@ -51,7 +54,27 @@ void DeformationGraph::CalConnectedMap()
     }
 }
 
-vector<int> DeformationGraph::GetSamplingVertices()
+void DeformationGraph::Run()
 {
-    return sample_vertices;
+    UpdateOriginMesh();
+}
+
+void DeformationGraph::UpdateOriginMesh()
+{
+    for (int i = 0; i < sample_idices.size(); ++i)
+    {
+        mesh->vertices[3 * sample_idices[i] + 0] = samplingMesh->vertices[i * 3 + 3];
+        mesh->vertices[3 * sample_idices[i] + 1] = samplingMesh->vertices[i * 3 + 4];
+        mesh->vertices[3 * sample_idices[i] + 2] = samplingMesh->vertices[i * 3 + 5];
+    }
+}
+
+void DeformationGraph::SetControlPoints(vector<vector<int>> controlPoints)
+{
+    control_points = controlPoints;
+}
+
+vector<int> DeformationGraph::GetSamplingIndices()
+{
+    return sample_idices;
 }

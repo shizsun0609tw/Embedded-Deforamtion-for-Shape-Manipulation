@@ -68,9 +68,15 @@ static GLboolean tb_animate = GL_TRUE;
 _GLMmodel* originMesh;
 _GLMmodel* samplingMesh;
 
-vector<int> featureList;
-int selectedFeature = -1;
+typedef enum { SELECT_MODE, DEFORM_MODE } ControlMode;
+ControlMode current_mode = SELECT_MODE;
+
+vector<vector<int>> handles;
+vector<float*> colors;
+int selected_handle_id = -1;
+int select_x, select_y;
 int last_x, last_y;
+bool deform_mesh_flag = false;
 
 DeformationGraph deformationGraph;
 
@@ -148,6 +154,27 @@ void tbMatrix()
   glPopMatrix();
 
   glMultMatrixf((GLfloat *)tb_transform);
+}
+
+vector2 projection_helper(vector3 _3Dpos)
+{
+    int viewport[4];
+    double ModelViewMatrix[16];    // Model_view matrix
+    double ProjectionMatrix[16];   // Projection matrix
+
+    glPushMatrix();
+    tbMatrix();
+
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    glGetDoublev(GL_MODELVIEW_MATRIX, ModelViewMatrix);
+    glGetDoublev(GL_PROJECTION_MATRIX, ProjectionMatrix);
+
+    glPopMatrix();
+
+    double wpos[3] = { 0.0 , 0.0 , 0.0 };
+    gluProject(-_3Dpos.x, _3Dpos.y, _3Dpos.z, ModelViewMatrix, ProjectionMatrix, viewport, &wpos[0], &wpos[1], &wpos[2]);
+
+    return vector2(wpos[0], (double)viewport[3] - wpos[1]);
 }
 
 void gettbMatrix(float *m)
@@ -278,6 +305,133 @@ void reshape(int width, int height)
     glLoadIdentity();
     glTranslatef(0.0f, 0.0f, -3.5f);
 }
+vector<vector<vector3>> GetBoundingBox(vector3 left_top, vector3 right_bottom)
+{
+    vector<vector<vector3>> res;
+    vector<vector3> polygon;
+
+    vector3 center = (right_bottom - left_top) / 2 + left_top;
+    vector3 up = vector3(0, left_top[1] - center[1], 0);
+    vector3 right = vector3(right_bottom[0] - center[0], 0, 0);
+    vector3 front = vector3(0, 0, left_top[2] - center[2]);
+    // front
+    polygon.clear();
+    polygon.push_back(vector3(center + front - up - right));
+    polygon.push_back(vector3(center + front - up + right));
+    polygon.push_back(vector3(center + front + up + right));
+    polygon.push_back(vector3(center + front + up - right));
+    polygon.push_back(vector3(0, 0, 1));
+    res.push_back(polygon);
+    // back
+    polygon.clear();
+    polygon.push_back(vector3(center - front - up - right));
+    polygon.push_back(vector3(center - front - up + right));
+    polygon.push_back(vector3(center - front + up + right));
+    polygon.push_back(vector3(center - front + up - right));
+    polygon.push_back(vector3(0, 0, -1));
+    res.push_back(polygon);
+    // top
+    polygon.clear();
+    polygon.push_back(vector3(center + front + up - right));
+    polygon.push_back(vector3(center + front + up + right));
+    polygon.push_back(vector3(center - front + up + right));
+    polygon.push_back(vector3(center - front + up - right));
+    polygon.push_back(vector3(0, 1, 0));
+    res.push_back(polygon);
+    // bottom
+    polygon.clear();
+    polygon.push_back(vector3(center + front - up - right));
+    polygon.push_back(vector3(center + front - up + right));
+    polygon.push_back(vector3(center - front - up + right));
+    polygon.push_back(vector3(center - front - up - right));
+    polygon.push_back(vector3(0, -1, 0));
+    res.push_back(polygon);
+    // left
+    polygon.clear();
+    polygon.push_back(vector3(center + front + up - right));
+    polygon.push_back(vector3(center + front - up - right));
+    polygon.push_back(vector3(center - front - up - right));
+    polygon.push_back(vector3(center - front + up - right));
+    polygon.push_back(vector3(1, 0, 0));
+    res.push_back(polygon);
+    // right
+    polygon.clear();
+    polygon.push_back(vector3(center + front + up + right));
+    polygon.push_back(vector3(center + front - up + right));
+    polygon.push_back(vector3(center - front - up + right));
+    polygon.push_back(vector3(center - front + up + right));
+    polygon.push_back(vector3(-1, 0, 0));
+    res.push_back(polygon);
+
+    return res;
+}
+
+void RenderControlBox(vector3 translate)
+{
+    glPushMatrix();
+
+    tbMatrix();
+
+    glTranslatef(translate.x, translate.y, translate.z);
+    glRotatef(180, 0, 1, 0);
+    
+    for (int handleIter = 0; handleIter < handles.size(); handleIter++)
+    {
+        vector3 left_top(INT_MIN, INT_MIN, INT_MIN), right_bottom(INT_MAX, INT_MAX, INT_MAX);
+        vector<vector<vector3>> box;
+
+        for (int vertIter = 0; vertIter < handles[handleIter].size(); vertIter++)
+        {
+            int idx = handles[handleIter][vertIter];
+            glVertex3fv((float*)&samplingMesh->vertices[3 * idx]);
+
+            left_top[0] = max(left_top[0], samplingMesh->vertices[3 * idx + 0]);
+            left_top[1] = max(left_top[1], samplingMesh->vertices[3 * idx + 1]);
+            left_top[2] = max(left_top[2], samplingMesh->vertices[3 * idx + 2]);
+
+            right_bottom[0] = min(right_bottom[0], samplingMesh->vertices[3 * idx + 0]);
+            right_bottom[1] = min(right_bottom[1], samplingMesh->vertices[3 * idx + 1]);
+            right_bottom[2] = min(right_bottom[2], samplingMesh->vertices[3 * idx + 2]);
+        }
+
+        box = GetBoundingBox(left_top, right_bottom);
+        glColor3fv(colors[handleIter % colors.size()]);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glEnable(GL_LIGHTING);
+        for (int i = 0; i < box.size(); ++i)
+        {
+            glBegin(GL_POLYGON);
+            glNormal3fv((float*)&box[i][4]);
+            for (int j = 0; j < 4; ++j)
+            {
+                glVertex3fv((float*)&box[i][j]);
+            }
+            glEnd();
+        }
+        glDisable(GL_LIGHTING);
+    }
+    
+    glPopMatrix();
+}
+
+void RenderCoordinate()
+{
+    glPushMatrix();
+
+    tbMatrix();
+
+    glLineWidth(5.0f);
+    glColor3f(1, 1, 1);
+    for (int i = 0; i < 3; ++i)
+    {
+        glBegin(GL_LINES);
+        glVertex3f(0, 0, 0);
+        glVertex3f((i == 0) * 1.5, (i == 1) * 1.5, (i == 2) * 1.5);
+        glEnd();
+    }
+
+    glPopMatrix();
+}
 
 void RenderMesh(GLMmodel* model, vector3 translate, vector3 color)
 {
@@ -286,8 +440,7 @@ void RenderMesh(GLMmodel* model, vector3 translate, vector3 color)
     tbMatrix();
 
     glTranslatef(translate.x, translate.y, translate.z);
-    glRotatef(-75, 1, 0, 0);
-    glRotatef(-45, 0, 0, 1);
+    glRotatef(180, 0, 1, 0);
 
     glEnable(GL_LIGHTING);
     glColor3f(1.0f, 1.0f, 1.0f);
@@ -301,29 +454,8 @@ void RenderMesh(GLMmodel* model, vector3 translate, vector3 color)
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glmDraw(model, GLM_SMOOTH);
 
-    glPointSize(10.0f);
-    glColor3f(1.0f, 0.0f, 0.0f);
     glDisable(GL_LIGHTING);
-
-    glBegin(GL_POINTS);
-    for (int i = 0; i < featureList.size(); ++i)
-    {
-        int idx = featureList[i];
-        glVertex3fv((float*)&model->vertices[3 * idx]);
-    }
-    glEnd();
-
-    vector<int> samplingVertices = deformationGraph.GetSamplingVertices();
-
-    glPointSize(5.0f);
-    glBegin(GL_POINTS);
-    glColor3f(0.0f, 0.0f, 1.0f);
-    for (int i = 0; i < samplingVertices.size(); ++i)
-    {
-        glVertex3fv((float*)&model->vertices[3 * samplingVertices[i]]);
-    }
-    glEnd();
-
+      
     glPopMatrix();
 }
 
@@ -331,25 +463,6 @@ void RenderDeformationGraph(vector3 translate, vector3 color)
 {
     glPushMatrix();
 
-    tbMatrix();
-
-    glTranslatef(translate.x, translate.y, translate.z);
-    glRotatef(-75, 1, 0, 0);
-    glRotatef(-45, 0, 0, 1);
-    
-    glLineWidth(10.0f);
-    glColor3f(color.x, color.y, color.z);
-    /*
-    vector<pair<vector3, vector3>> edges = deformationGraph.GetEdges();
-
-    for (int i = 0; i < edges.size(); ++i)
-    {
-        glBegin(GL_LINES);
-        glVertex3fv((float*)&edges[i].first);
-        glVertex3fv((float*)&edges[i].second);
-        glEnd();
-    }
-    */
     glPopMatrix();
 }
 
@@ -357,9 +470,10 @@ void display(void)
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    RenderMesh(originMesh, vector3(0.0, 0.0, 0.0), vector3(0.6, 0.0, 0.0));
-    // RenderMesh(samplingMesh, vector3(0.0, 0.0, 0.0), vector3(0.0, 0.6, 0.0));
-    // RenderDeformationGraph(vector3(0.15, 0.0, 0.0), vector3(0.6, 0.6, 0.0));
+    RenderCoordinate();
+    RenderControlBox(vector3(0.0, 0.0, 0.0));
+    RenderMesh(originMesh, vector3(1.5, 0.0, 0.0), vector3(0.6, 0.0, 0.0));
+    RenderMesh(samplingMesh, vector3(0.0, 0.0, 0.0), vector3(0.0, 0.6, 0.0));
     
     glFlush();
     glutSwapBuffers();
@@ -369,6 +483,66 @@ void mouse(int button, int state, int x, int y)
 {
     tbMouse(button, state, x, y);
 
+    if (current_mode == SELECT_MODE && button == GLUT_RIGHT_BUTTON)
+    {
+        if (state == GLUT_DOWN)
+        {
+            select_x = x;
+            select_y = y;
+        }
+        else
+        {
+            vector<int> this_handle;
+
+            // project all mesh vertices to current viewport
+            for (int vertIter = 0; vertIter < samplingMesh->numvertices; vertIter++)
+            {
+                vector3 pt(samplingMesh->vertices[3 * vertIter + 0], samplingMesh->vertices[3 * vertIter + 1], samplingMesh->vertices[3 * vertIter + 2]);
+                vector2 pos = projection_helper(pt);
+
+                // if the projection is inside the box specified by mouse click&drag, add it to current handle
+                if (pos.x >= select_x && pos.y >= select_y && pos.x <= x && pos.y <= y)
+                {
+                    this_handle.push_back(vertIter);
+                }
+            }
+            if (this_handle.size() != 0)
+            {
+                handles.push_back(this_handle);
+                deformationGraph.SetControlPoints(handles);
+            }
+        }
+    }
+    else if (current_mode == DEFORM_MODE && button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
+    {
+        // project all handle vertices to current viewport
+        // see which is closest to selection point
+        double min_dist = 999999;
+        int handle_id = -1;
+        for (int handleIter = 0; handleIter < handles.size(); handleIter++)
+        {
+            for (int vertIter = 0; vertIter < handles[handleIter].size(); vertIter++)
+            {
+                int idx = handles[handleIter][vertIter];
+                vector3 pt(samplingMesh->vertices[3 * idx + 0], samplingMesh->vertices[3 * idx + 1], samplingMesh->vertices[3 * idx + 2]);
+                vector2 pos = projection_helper(pt);
+
+                double this_dist = sqrt((double)(pos.x - x) * (pos.x - x) + (double)(pos.y - y) * (pos.y - y));
+                if (this_dist < min_dist)
+                {
+                    min_dist = this_dist;
+                    handle_id = handleIter;
+                }
+            }
+        }
+
+        selected_handle_id = handle_id;
+        deform_mesh_flag = true;
+    }
+
+    if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP)
+        deform_mesh_flag = false;
+
     return;
 }
 
@@ -376,19 +550,47 @@ void motion(int x, int y)
 {
     tbMotion(x, y);
 
-    if (selectedFeature != -1)
+    // if in deform mode and a handle is selected, deform the mesh
+    if (current_mode == DEFORM_MODE && deform_mesh_flag == true)
     {
         matrix44 m;
-        vector4 vec = vector4((float)(x - last_x) / 100.0f, (float)(y - last_y) / 100.0f, 0.0f, 1.0f);
+        vector4 vec = vector4((float)(x - last_x) / 1000.0f, (float)(y - last_y) / 1000.0f, 0.0, 1.0);
 
         gettbMatrix((float*)&m);
         vec = m * vec;
 
-        vec.y *= -1;
+        // deform handle points
+        for (int vertIter = 0; vertIter < handles[selected_handle_id].size(); vertIter++)
+        {
+            int idx = handles[selected_handle_id][vertIter];
+            vector3 pt(samplingMesh->vertices[3 * idx + 0] + vec.x, samplingMesh->vertices[3 * idx + 1] + vec.y, samplingMesh->vertices[3 * idx + 2] + vec.z);
+            samplingMesh->vertices[3 * idx + 0] = pt[0];
+            samplingMesh->vertices[3 * idx + 1] = pt[1];
+            samplingMesh->vertices[3 * idx + 2] = pt[2];
+        }
+
+        deformationGraph.Run();
+
     }
 
     last_x = x;
     last_y = y;
+}
+
+void keyboard(unsigned char key, int x, int y)
+{
+    switch (key)
+    {
+    case 'd':
+        current_mode = DEFORM_MODE;
+        cout << "deform mode" << endl;
+        break;
+    default:
+    case 's':
+        current_mode = SELECT_MODE;
+        cout << "select mode" << endl;
+        break;
+    }
 }
 
 void timf(int value)
@@ -406,11 +608,20 @@ int main(int argc, char** argv)
     GLfloat light_diffuse[] = { 0.8, 0.8, 0.8, 1.0 };
     GLfloat light_specular[] = { 1.0, 1.0, 1.0, 1.0 };
     GLfloat light_position[] = { 0.0, 0.0, 1.0, 0.0 };
+    
+    float red[] = { 1.0, 0.0, 0.0 };
+    colors.push_back(red);
+    float yellow[] = { 1.0, 1.0, 0.0 };
+    colors.push_back(yellow);
+    float blue[] = { 0.0, 1.0, 1.0 };
+    colors.push_back(blue);
+    float green[] = { 0.0, 1.0, 0.0 };
+    colors.push_back(green);
 
     glutInit(&argc, argv);
     glutInitWindowSize(WindWidth, WindHeight);
     glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
-    glutCreateWindow("Trackball");
+    glutCreateWindow("Embedded Deformation");
 
     init();
 
@@ -418,6 +629,7 @@ int main(int argc, char** argv)
     glutDisplayFunc(display);
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
+    glutKeyboardFunc(keyboard);
     glClearColor(0, 0, 0, 0);
 
     glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
