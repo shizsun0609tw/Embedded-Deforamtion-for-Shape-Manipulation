@@ -541,7 +541,13 @@ void mouse(int button, int state, int x, int y)
     }
 
     if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP)
+    {
         deform_mesh_flag = false;
+    }
+    if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP && current_mode == DEFORM_MODE)
+    {
+        deformationGraph.Run();
+    }
 
     return;
 }
@@ -558,19 +564,9 @@ void motion(int x, int y)
 
         gettbMatrix((float*)&m);
         vec = m * vec;
-
-        // deform handle points
-        for (int vertIter = 0; vertIter < handles[selected_handle_id].size(); vertIter++)
-        {
-            int idx = handles[selected_handle_id][vertIter];
-            vector3 pt(samplingMesh->vertices[3 * idx + 0] + vec.x, samplingMesh->vertices[3 * idx + 1] + vec.y, samplingMesh->vertices[3 * idx + 2] + vec.z);
-            samplingMesh->vertices[3 * idx + 0] = pt[0];
-            samplingMesh->vertices[3 * idx + 1] = pt[1];
-            samplingMesh->vertices[3 * idx + 2] = pt[2];
-        }
-
-        deformationGraph.Run();
-
+        
+        deformationGraph.SetControlPointsTranslate(selected_handle_id, vector3(vec));
+        //deformationGraph.Run();
     }
 
     last_x = x;
