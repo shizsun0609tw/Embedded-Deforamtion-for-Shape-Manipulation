@@ -10,10 +10,10 @@ void DeformationGraph::Init(_GLMmodel* originMesh, _GLMmodel* samplingMesh)
 	this->originMesh = originMesh;
     this->samplingMesh = samplingMesh;
 
-    k_nearest = 4;
+    k_nearest = 8;
     w_rot = 1.0f;
-    w_reg = 10.0f;
-    w_con = 100.0f;
+    w_reg = 100.0f;
+    w_con = 10.0f;
 
     sample_controls = 0;
     sample_nodes = samplingMesh->numvertices;
@@ -94,7 +94,7 @@ void DeformationGraph::Run()
     GaussainNewton();
 }
 
-void DeformationGraph::ApplyResults()
+void DeformationGraph::UpdateDeformationGraph()
 {
     vector<Vector3f> results(sample_nodes);
     for (int i = 0; i < sample_nodes; ++i)
@@ -137,7 +137,7 @@ void DeformationGraph::UpdateSampleVertices()
 
 void DeformationGraph::GaussainNewton()
 {
-    const float epsilon = 1e-4;
+    const float epsilon = 1e-3;
     const int iter_max = 5;
     float err_current = 1, err_past = 2;
     SparseMatrix<float> J(6 * sample_nodes + 6 * sample_edges + 3 * sample_controls, 12 * sample_nodes);
@@ -172,7 +172,8 @@ void DeformationGraph::GaussainNewton()
 
         x = h;
 
-        cout << "Iteration: " << i << endl;
+        cout << "---------------------------------------\n";
+        cout << "Iteration: " << i + 1<< endl;
         err_current = F(x);
         cout << "Error: " << err_current << endl;
     }
@@ -336,7 +337,7 @@ float DeformationGraph::F(MatrixXf &x)
         for (int j = 0; j < 3; ++j) trans[i][j] = x(12 * i + 9 + j, 0);
     }
 
-    ApplyResults();
+    UpdateDeformationGraph();
 
     float Erot = CalErot(), Ereg = CalEreg(), Econ = CalEcon();
 

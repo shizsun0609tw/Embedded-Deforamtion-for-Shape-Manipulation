@@ -36,7 +36,7 @@ public:
 private:
 	void InitRotAndTrans();
 	void UpdateSampleVertices();
-	void ApplyResults();
+	void UpdateDeformationGraph();
 	void CalConnectedMap();
 	void CalSamplingVertices();
 
