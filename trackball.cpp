@@ -546,7 +546,7 @@ void mouse(int button, int state, int x, int y)
     }
     if (button == GLUT_RIGHT_BUTTON && state == GLUT_UP && current_mode == DEFORM_MODE)
     {
-        deformationGraph.Run();
+        //deformationGraph.Run();
     }
 
     return;
@@ -566,7 +566,7 @@ void motion(int x, int y)
         vec = m * vec;
         
         deformationGraph.SetControlPointsTranslate(selected_handle_id, vector3(vec));
-        //deformationGraph.Run();
+        deformationGraph.Run();
     }
 
     last_x = x;

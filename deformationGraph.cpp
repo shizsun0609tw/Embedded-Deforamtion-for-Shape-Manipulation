@@ -12,8 +12,8 @@ void DeformationGraph::Init(_GLMmodel* originMesh, _GLMmodel* samplingMesh)
 
     k_nearest = 8;
     w_rot = 1.0f;
-    w_reg = 100.0f;
-    w_con = 10.0f;
+    w_reg = 10.0f;
+    w_con = 100.0f;
 
     sample_controls = 0;
     sample_nodes = samplingMesh->numvertices;
@@ -23,6 +23,15 @@ void DeformationGraph::Init(_GLMmodel* originMesh, _GLMmodel* samplingMesh)
     CalSamplingVertices();
     CalWeights();
     
+    default_vertices = vector<Vector3f>(sample_nodes);
+    for (int i = 0; i < sample_nodes; ++i)
+    {
+        default_vertices[i] = Vector3f(
+            samplingMesh->vertices[(i + 1) * 3 + 0],
+            samplingMesh->vertices[(i + 1) * 3 + 1],
+            samplingMesh->vertices[(i + 1) * 3 + 2]);
+    }
+
     for (auto iter = connectedMap.begin(); iter != connectedMap.end(); ++iter)
     {
         sample_edges += (*iter).second.size();
@@ -127,18 +136,18 @@ void DeformationGraph::UpdateDeformationGraph()
 
 void DeformationGraph::UpdateSampleVertices()
 {
-    for (int i = 0; i < sample_idices.size(); ++i)
+    for (int i = 0; i < sample_nodes; ++i)
     {
-        originMesh->vertices[3 * sample_idices[i] + 0] = samplingMesh->vertices[i * 3 + 3];
-        originMesh->vertices[3 * sample_idices[i] + 1] = samplingMesh->vertices[i * 3 + 4];
-        originMesh->vertices[3 * sample_idices[i] + 2] = samplingMesh->vertices[i * 3 + 5];
+        samplingMesh->vertices[(i + 1) * 3 + 0] = default_vertices[i][0];
+        samplingMesh->vertices[(i + 1) * 3 + 1] = default_vertices[i][1];
+        samplingMesh->vertices[(i + 1) * 3 + 2] = default_vertices[i][2];
     }
 }
 
 void DeformationGraph::GaussainNewton()
 {
     const float epsilon = 1e-3;
-    const int iter_max = 5;
+    const int iter_max = 1;
     float err_current = 1, err_past = 2;
     SparseMatrix<float> J(6 * sample_nodes + 6 * sample_edges + 3 * sample_controls, 12 * sample_nodes);
     MatrixXf f, h, x(12 * sample_nodes, 1);
@@ -166,7 +175,7 @@ void DeformationGraph::GaussainNewton()
 
         I.setIdentity();
         JtJ += 1e-7 * I;
-        
+
         SimplicialCholesky<SparseMatrix<float>> solver(JtJ);
         MatrixXf h = solver.solve(J.transpose() * f);
 

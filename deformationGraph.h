@@ -67,6 +67,7 @@ private:
 	vector<int> sample_idices;
 	vector<Matrix3f> rot;
 	vector<Vector3f> trans;
+	vector<Vector3f> default_vertices;
 	vector<vector<int>> control_points_id;
 	vector<vector<vector3>> control_points_data;
 	vector<vector<pair<int, float>>> weights;
