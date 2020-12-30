@@ -459,21 +459,14 @@ void RenderMesh(GLMmodel* model, vector3 translate, vector3 color)
     glPopMatrix();
 }
 
-void RenderDeformationGraph(vector3 translate, vector3 color)
-{
-    glPushMatrix();
-
-    glPopMatrix();
-}
-
 void display(void)
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     RenderCoordinate();
     RenderControlBox(vector3(0.0, 0.0, 0.0));
-    RenderMesh(originMesh, vector3(1.5, 0.0, 0.0), vector3(0.6, 0.0, 0.0));
-    RenderMesh(samplingMesh, vector3(0.0, 0.0, 0.0), vector3(0.0, 0.6, 0.0));
+    RenderMesh(originMesh, vector3(0.0, 0.0, 0.0), vector3(0.6, 0.0, 0.0));
+    RenderMesh(samplingMesh, vector3(1.5, 0.0, 0.0), vector3(0.0, 0.6, 0.0));
     
     glFlush();
     glutSwapBuffers();

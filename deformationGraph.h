@@ -37,6 +37,7 @@ private:
 	void InitRotAndTrans();
 	void UpdateSampleVertices();
 	void UpdateDeformationGraph();
+	void UpdateOriginMesh();
 	void CalConnectedMap();
 	void CalSamplingVertices();
 
@@ -44,7 +45,8 @@ private:
 	void GaussainNewton();
 	void Calf(MatrixXf &f);
 	void CalJ(SparseMatrix<float> &J);
-	void CalWeights();
+	void CalDeformationGraphWeights();
+	void CalEmbeddedWeights();
 	float F(MatrixXf &x);
 	float CalErot();
 	float CalEcon();
@@ -67,9 +69,11 @@ private:
 	vector<int> sample_idices;
 	vector<Matrix3f> rot;
 	vector<Vector3f> trans;
-	vector<Vector3f> default_vertices;
+	vector<Vector3f> default_sampling_vertices;
+	vector<Vector3f> default_origin_vertices;
 	vector<vector<int>> control_points_id;
 	vector<vector<vector3>> control_points_data;
-	vector<vector<pair<int, float>>> weights;
+	vector<vector<pair<int, float>>> deformationGraphWeights;
+	vector<vector<pair<int, float>>> embeddedWeights;
 	map<int, set<int>> connectedMap;
 };

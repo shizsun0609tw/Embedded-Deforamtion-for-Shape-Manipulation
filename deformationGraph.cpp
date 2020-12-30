@@ -21,15 +21,25 @@ void DeformationGraph::Init(_GLMmodel* originMesh, _GLMmodel* samplingMesh)
     InitRotAndTrans();
     CalConnectedMap();
     CalSamplingVertices();
-    CalWeights();
+    CalEmbeddedWeights();
+    CalDeformationGraphWeights();
     
-    default_vertices = vector<Vector3f>(sample_nodes);
+    default_sampling_vertices = vector<Vector3f>(sample_nodes);
     for (int i = 0; i < sample_nodes; ++i)
     {
-        default_vertices[i] = Vector3f(
+        default_sampling_vertices[i] = Vector3f(
             samplingMesh->vertices[(i + 1) * 3 + 0],
             samplingMesh->vertices[(i + 1) * 3 + 1],
             samplingMesh->vertices[(i + 1) * 3 + 2]);
+    }
+
+    default_origin_vertices = vector<Vector3f>(originMesh->numvertices);
+    for (int i = 0; i < originMesh->numvertices; ++i)
+    {
+        default_origin_vertices[i] = Vector3f(
+            originMesh->vertices[(i + 1) * 3 + 0],
+            originMesh->vertices[(i + 1) * 3 + 1],
+            originMesh->vertices[(i + 1) * 3 + 2]);
     }
 
     for (auto iter = connectedMap.begin(); iter != connectedMap.end(); ++iter)
@@ -105,32 +115,11 @@ void DeformationGraph::Run()
 
 void DeformationGraph::UpdateDeformationGraph()
 {
-    vector<Vector3f> results(sample_nodes);
     for (int i = 0; i < sample_nodes; ++i)
     {
-        Vector3f result(0, 0, 0);
-        Vector3f vi = Vector3f(
-            samplingMesh->vertices[(i + 1) * 3 + 0],
-            samplingMesh->vertices[(i + 1) * 3 + 1],
-            samplingMesh->vertices[(i + 1) * 3 + 2]);
-
-        for (int j = 0; j < k_nearest; ++j)
-        {
-            Vector3f gj = Vector3f(
-                samplingMesh->vertices[(weights[i][j].first) * 3 + 0],
-                samplingMesh->vertices[(weights[i][j].first) * 3 + 1],
-                samplingMesh->vertices[(weights[i][j].first) * 3 + 2]);
-
-            result += (weights[i][j].second) * (rot[weights[i][j].first - 1] * (vi - gj) + gj + trans[weights[i][j].first - 1]);
-        }
-        results[i] = result;
-    }
-
-    for (int i = 0; i < sample_nodes; ++i)
-    {
-        samplingMesh->vertices[(i + 1) * 3 + 0] = results[i][0];
-        samplingMesh->vertices[(i + 1) * 3 + 1] = results[i][1];
-        samplingMesh->vertices[(i + 1) * 3 + 2] = results[i][2];
+        samplingMesh->vertices[(i + 1) * 3 + 0] += trans[i][0];
+        samplingMesh->vertices[(i + 1) * 3 + 1] += trans[i][1];
+        samplingMesh->vertices[(i + 1) * 3 + 2] += trans[i][2];
     }
 }
 
@@ -138,16 +127,55 @@ void DeformationGraph::UpdateSampleVertices()
 {
     for (int i = 0; i < sample_nodes; ++i)
     {
-        samplingMesh->vertices[(i + 1) * 3 + 0] = default_vertices[i][0];
-        samplingMesh->vertices[(i + 1) * 3 + 1] = default_vertices[i][1];
-        samplingMesh->vertices[(i + 1) * 3 + 2] = default_vertices[i][2];
+        samplingMesh->vertices[(i + 1) * 3 + 0] = default_sampling_vertices[i][0];
+        samplingMesh->vertices[(i + 1) * 3 + 1] = default_sampling_vertices[i][1];
+        samplingMesh->vertices[(i + 1) * 3 + 2] = default_sampling_vertices[i][2];
+    }
+
+    for (int i = 0; i < originMesh->numvertices; ++i)
+    {
+        originMesh->vertices[(i + 1) * 3 + 0] = default_origin_vertices[i][0];
+        originMesh->vertices[(i + 1) * 3 + 1] = default_origin_vertices[i][1];
+        originMesh->vertices[(i + 1) * 3 + 2] = default_origin_vertices[i][2];
+    }
+}
+
+void DeformationGraph::UpdateOriginMesh()
+{
+    int nodes = originMesh->numvertices;
+    vector<Vector3f> results(nodes);
+    for (int i = 0; i < nodes; ++i)
+    {
+        Vector3f result(0, 0, 0);
+        Vector3f vi = Vector3f(
+            originMesh->vertices[(i + 1) * 3 + 0],
+            originMesh->vertices[(i + 1) * 3 + 1],
+            originMesh->vertices[(i + 1) * 3 + 2]);
+
+        for (int j = 0; j < k_nearest; ++j)
+        {
+            Vector3f gj = Vector3f(
+                samplingMesh->vertices[(embeddedWeights[i][j].first) * 3 + 0],
+                samplingMesh->vertices[(embeddedWeights[i][j].first) * 3 + 1],
+                samplingMesh->vertices[(embeddedWeights[i][j].first) * 3 + 2]);
+
+            result += (embeddedWeights[i][j].second) * (rot[embeddedWeights[i][j].first - 1] * (vi - gj) + gj + trans[embeddedWeights[i][j].first - 1]);
+        }
+        results[i] = result;
+    }
+
+    for (int i = 0; i < nodes; ++i)
+    {
+        originMesh->vertices[(i + 1) * 3 + 0] = results[i][0];
+        originMesh->vertices[(i + 1) * 3 + 1] = results[i][1];
+        originMesh->vertices[(i + 1) * 3 + 2] = results[i][2];
     }
 }
 
 void DeformationGraph::GaussainNewton()
 {
     const float epsilon = 1e-3;
-    const int iter_max = 1;
+    const int iter_max = 5;
     float err_current = 1, err_past = 2;
     SparseMatrix<float> J(6 * sample_nodes + 6 * sample_edges + 3 * sample_controls, 12 * sample_nodes);
     MatrixXf f, h, x(12 * sample_nodes, 1);
@@ -170,14 +198,11 @@ void DeformationGraph::GaussainNewton()
         Calf(f);
         CalJ(J);
 
+        SparseMatrix<float> Jt = J.transpose();
         SparseMatrix<float> JtJ = J.transpose() * J;
-        SparseMatrix<float> I = SparseMatrix<float>(JtJ.rows(), JtJ.cols());
 
-        I.setIdentity();
-        JtJ += 1e-7 * I;
-
-        SimplicialCholesky<SparseMatrix<float>> solver(JtJ);
-        MatrixXf h = solver.solve(J.transpose() * f);
+        SimplicialCholesky<SparseMatrix<float>> solver(Jt * J);
+        MatrixXf h = solver.solve(Jt * f);
 
         x = h;
 
@@ -186,6 +211,7 @@ void DeformationGraph::GaussainNewton()
         err_current = F(x);
         cout << "Error: " << err_current << endl;
     }
+
     cout << "------------------- Finished -------------------\n" << endl;
 }
 
@@ -250,7 +276,7 @@ void DeformationGraph::Calf(MatrixXf &f)
 void DeformationGraph::CalJ(SparseMatrix<float>& J)
 {
     int idx = 0;
-    vector<Triplet<float>> Jacobi(sample_nodes);
+    vector<Triplet<float>> Jacobi;
 
     // Erot
     for (int i = 0; i < sample_nodes; ++i)
@@ -321,8 +347,6 @@ void DeformationGraph::CalJ(SparseMatrix<float>& J)
     }
 
     // Econ
-    vector<float> weights;
-    vector<int> index;
     for (int i = 0; i < control_points_id.size(); ++i)
     {
         for (int j = 0; j < control_points_id[i].size(); ++j)
@@ -346,6 +370,7 @@ float DeformationGraph::F(MatrixXf &x)
         for (int j = 0; j < 3; ++j) trans[i][j] = x(12 * i + 9 + j, 0);
     }
 
+    UpdateOriginMesh();
     UpdateDeformationGraph();
 
     float Erot = CalErot(), Ereg = CalEreg(), Econ = CalEcon();
@@ -419,7 +444,7 @@ float DeformationGraph::CalEcon()
     return Econ;
 }
 
-void DeformationGraph::CalWeights()
+void DeformationGraph::CalDeformationGraphWeights()
 {
     vector<vector<float>> distance(sample_nodes);
     vector<vector<int>> index(sample_nodes);
@@ -442,7 +467,7 @@ void DeformationGraph::CalWeights()
         index[i] = temp_i;
     }
 
-    weights = vector<vector<pair<int, float>>>(sample_nodes);
+    deformationGraphWeights = vector<vector<pair<int, float>>>(sample_nodes);
     for (int i = 0; i < sample_nodes; ++i)
     {
         vector<pair<int, float>> temp_p(k_nearest + 1);
@@ -465,34 +490,113 @@ void DeformationGraph::CalWeights()
 
             temp_p[j] = pair<int, float>(index[i][j] + 1, distance[i][j]);
         }
-        weights[i] = temp_p;
+        deformationGraphWeights[i] = temp_p;
     }
 
     for (int i = 0; i < sample_nodes; ++i)
     {
         vector3 temp = vector3(
-            samplingMesh->vertices[(i + 1) * 3 + 0] - samplingMesh->vertices[weights[i][k_nearest].first * 3 + 0],
-            samplingMesh->vertices[(i + 1) * 3 + 1] - samplingMesh->vertices[weights[i][k_nearest].first * 3 + 1],
-            samplingMesh->vertices[(i + 1) * 3 + 2] - samplingMesh->vertices[weights[i][k_nearest].first * 3 + 2]);
+            samplingMesh->vertices[(i + 1) * 3 + 0] - samplingMesh->vertices[deformationGraphWeights[i][k_nearest].first * 3 + 0],
+            samplingMesh->vertices[(i + 1) * 3 + 1] - samplingMesh->vertices[deformationGraphWeights[i][k_nearest].first * 3 + 1],
+            samplingMesh->vertices[(i + 1) * 3 + 2] - samplingMesh->vertices[deformationGraphWeights[i][k_nearest].first * 3 + 2]);
         float d_max = sqrt(temp[0] * temp[0] + temp[1] * temp[1] + temp[2] * temp[2]);
         float sum = 0;
 
         for (int j = 0; j < k_nearest; ++j)
         {
             temp = vector3(
-                samplingMesh->vertices[(i + 1) * 3 + 0] - samplingMesh->vertices[weights[i][j].first * 3 + 0],
-                samplingMesh->vertices[(i + 1) * 3 + 1] - samplingMesh->vertices[weights[i][j].first * 3 + 1],
-                samplingMesh->vertices[(i + 1) * 3 + 2] - samplingMesh->vertices[weights[i][j].first * 3 + 2]);
+                samplingMesh->vertices[(i + 1) * 3 + 0] - samplingMesh->vertices[deformationGraphWeights[i][j].first * 3 + 0],
+                samplingMesh->vertices[(i + 1) * 3 + 1] - samplingMesh->vertices[deformationGraphWeights[i][j].first * 3 + 1],
+                samplingMesh->vertices[(i + 1) * 3 + 2] - samplingMesh->vertices[deformationGraphWeights[i][j].first * 3 + 2]);
             float d = sqrt(temp[0] * temp[0] + temp[1] * temp[1] + temp[2] * temp[2]);
 
-            weights[i][j].second = pow(1 - d / d_max, 2);
-            sum += weights[i][j].second;
+            deformationGraphWeights[i][j].second = pow(1 - d / d_max, 2);
+            sum += deformationGraphWeights[i][j].second;
         }
 
         for (int j = 0; j < k_nearest; ++j)
         {
-            weights[i][j].second /= sum;
-            if (k_nearest == 1) weights[i][j].second = 1;
+            deformationGraphWeights[i][j].second /= sum;
+            if (k_nearest == 1) deformationGraphWeights[i][j].second = 1;
+        }
+    }
+}
+
+void DeformationGraph::CalEmbeddedWeights()
+{
+    int nodes = originMesh->numvertices;
+    vector<vector<float>> distance(nodes);
+    vector<vector<int>> index(nodes);
+
+    for (int i = 0; i < nodes; ++i)
+    {
+        vector<float> temp_d(sample_nodes);
+        vector<int> temp_i(sample_nodes);
+        vector3 temp_v;
+        for (int j = 0; j < sample_nodes; ++j)
+        {
+            temp_v = vector3(
+                originMesh->vertices[(i + 1) * 3 + 0] - samplingMesh->vertices[(j + 1) * 3 + 0],
+                originMesh->vertices[(i + 1) * 3 + 1] - samplingMesh->vertices[(j + 1) * 3 + 1],
+                originMesh->vertices[(i + 1) * 3 + 2] - samplingMesh->vertices[(j + 1) * 3 + 2]);
+            temp_d[j] = sqrt(temp_v[0] * temp_v[0] + temp_v[1] * temp_v[1] + temp_v[2] * temp_v[2]);
+            temp_i[j] = j;
+        }
+        distance[i] = temp_d;
+        index[i] = temp_i;
+    }
+    
+    embeddedWeights = vector<vector<pair<int, float>>>(nodes);
+    for (int i = 0; i < nodes; ++i)
+    {
+        vector<pair<int, float>> temp_p(k_nearest + 1);
+        for (int j = 0; j < k_nearest + 1; ++j)
+        {
+            int idx_min = j;
+
+            for (int k = j + 1; k < sample_nodes; ++k)
+            {
+                if (distance[i][k] < distance[i][idx_min]) idx_min = k;
+            }
+
+            float temp = distance[i][j];
+            distance[i][j] = distance[i][idx_min];
+            distance[i][idx_min] = temp;
+
+            int temp_i = index[i][j];
+            index[i][j] = index[i][idx_min];
+            index[i][idx_min] = temp_i;
+
+            temp_p[j] = pair<int, float>(index[i][j] + 1, distance[i][j]);
+        }
+        embeddedWeights[i] = temp_p;
+    }
+    
+    for (int i = 0; i < nodes; ++i)
+    {
+        vector3 temp = vector3(
+            originMesh->vertices[(i + 1) * 3 + 0] - samplingMesh->vertices[embeddedWeights[i][k_nearest].first * 3 + 0],
+            originMesh->vertices[(i + 1) * 3 + 1] - samplingMesh->vertices[embeddedWeights[i][k_nearest].first * 3 + 1],
+            originMesh->vertices[(i + 1) * 3 + 2] - samplingMesh->vertices[embeddedWeights[i][k_nearest].first * 3 + 2]);
+        float d_max = sqrt(temp[0] * temp[0] + temp[1] * temp[1] + temp[2] * temp[2]);
+        float sum = 0;
+
+        for (int j = 0; j < k_nearest; ++j)
+        {
+            temp = vector3(
+                originMesh->vertices[(i + 1) * 3 + 0] - samplingMesh->vertices[embeddedWeights[i][j].first * 3 + 0],
+                originMesh->vertices[(i + 1) * 3 + 1] - samplingMesh->vertices[embeddedWeights[i][j].first * 3 + 1],
+                originMesh->vertices[(i + 1) * 3 + 2] - samplingMesh->vertices[embeddedWeights[i][j].first * 3 + 2]);
+            float d = sqrt(temp[0] * temp[0] + temp[1] * temp[1] + temp[2] * temp[2]);
+
+            embeddedWeights[i][j].second = pow(1 - d / d_max, 2);
+            sum += embeddedWeights[i][j].second;
+        }
+
+        for (int j = 0; j < k_nearest; ++j)
+        {
+            embeddedWeights[i][j].second /= sum;
+            if (k_nearest == 1) embeddedWeights[i][j].second = 1;
         }
     }
 }
@@ -525,7 +629,6 @@ void DeformationGraph::SetControlPoints(vector<vector<int>> controlPoints)
 
 void DeformationGraph::SetControlPointsTranslate(int selectedId, vector3 vec)
 {
-    // deform handle points
     for (int i = 0; i < control_points_id[selectedId].size(); i++)
     {
         int idx = control_points_id[selectedId][i];
